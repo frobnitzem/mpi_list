@@ -2,26 +2,44 @@
 mpi_list
 ========
 
-This is the documentation of **mpi_list**.
+**mpi_list** provides the `DFM` class.
 
-.. note::
+The `DFM` is a useful abstraction for working with
+lists distributed over a set of MPI ranks.
+The acronym stands for distributed free monoid,
+which is just a fancy to say it's a list.
 
-    This is the main page of your project's `Sphinx`_ documentation.
-    It is formatted in `reStructuredText`_. Add additional pages
-    by creating rst-files in ``docs`` and adding them to the `toctree`_ below.
-    Use then `references`_ in order to link them from this page, e.g.
-    :ref:`authors` and :ref:`changes`.
+If you're familiar with spark, it's like an RDD,
+but only holds a list.
 
-    It is also possible to refer to the documentation of other Python packages
-    with the `Python domain syntax`_. By default you can reference the
-    documentation of `Sphinx`_, `Python`_, `NumPy`_, `SciPy`_, `matplotlib`_,
-    `Pandas`_, `Scikit-Learn`_. You can add more by extending the
-    ``intersphinx_mapping`` in your Sphinx's ``conf.py``.
+Quick Start::
 
-    The pretty useful extension `autodoc`_ is activated by default and lets
-    you include documentation from docstrings. Docstrings can be written in
-    `Google style`_ (recommended!), `NumPy style`_ and `classical style`_.
+    from mpi_list import Context, DFM
 
+    C = Context() # calls MPI_Init via mpi4py
+
+    dfm = C . iterates(1000) \
+      # each rank now has 1000//C.procs consecutive numbers
+      . map(lambda i: f"String {i}") \
+      # each rank now has a list of strings
+      . filter(lambda s: '2' in s)
+      # only numbers containing a '2' remain
+
+    # Caution! This will deadlock your program:
+    # collective calls must be called by all ranks!
+    if C.rank == 0:
+        #print( dfm . head(10) )
+        pass
+
+    ans = dfm.head(10)
+    # This is OK, since all ranks now have 'ans'
+    if C.rank == 0:
+        print( ans )
+
+    ans = dfm . filter(lambda s: len(s) <= len("String nn"))
+              . collect()
+    if ans is not None: # only rank 0 gets "collect"
+        print( ans )
 
 Contents
 ========
