@@ -1,8 +1,13 @@
-#!/usr/bin/env python3
+import pytest
 
-from dfm import Context
-from reducer import Reducer, CommReducer
 import numpy as np
+from mpi_list import Context
+from mpi_list.reducer import Reducer, CommReducer
+
+__author__ = "David M. Rogers"
+__copyright__ = "David M. Rogers"
+__license__ = "MIT"
+
 
 def test():
     C = Context()
@@ -28,6 +33,7 @@ def test2():
     if C.rank == 0:
         print(x0[0])
 
-if __name__ == "__main__":
-    test()
+if __name__=="__main__":
+    "Allow tests to be run stand-alone using mpirun."
+    test1()
     test2()

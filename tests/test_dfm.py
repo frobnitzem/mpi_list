@@ -1,8 +1,12 @@
-#!/usr/bin/env python3
+import pytest
 
-from dfm import *
+from mpi_list.dfm import DFM, Context
 
-def test_dfm(N):
+__author__ = "David M. Rogers"
+__copyright__ = "David M. Rogers"
+__license__ = "MIT"
+
+def test_dfm(N=97):
     import numpy as np
     C = Context()
 
@@ -27,7 +31,7 @@ def test_dfm(N):
         for i in range(N):
             assert ans[i] == i
 
-def test_head(N, M):
+def test_head(N=107, M=3):
     import numpy as np
     C = Context()
 
@@ -38,7 +42,7 @@ def test_head(N, M):
     assert h[0] == 0
     assert h[-1] == len(h)-1
 
-def test_reduce(N):
+def test_reduce(N=101):
     C = Context()
 
     dfm = C . iterates(N) . map(lambda x: [x])
@@ -59,7 +63,7 @@ def test_reduce(N):
     if N >= 1:
         assert ans[0] == 0 and ans[-1] == N-1
 
-def test_filter(N):
+def test_filter(N=223):
     C = Context()
 
     dfm = C . iterates(N)
@@ -82,7 +86,7 @@ def test_flatmap():
         assert ans[-2] == '9'
         assert ans[-1] == '9'
 
-def test_nodemap(N):
+def test_nodemap(N=100):
     C = Context()
 
     def test_fn(rank, elems):
@@ -98,7 +102,7 @@ def test_nodemap(N):
     if N > 0:
         assert v[0][0] == 0 and v[0][1] == (N // C.procs) + (N % C.procs != 0)
 
-if __name__ == "__main__":
+def test_combinations():
     test_dfm(0)
     test_dfm(1)
     test_dfm(10)
@@ -118,3 +122,7 @@ if __name__ == "__main__":
 
     test_flatmap()
     test_nodemap(100)
+
+if __name__=="__main__":
+    "Allow tests to be run stand-alone using mpirun."
+    test_combinations()

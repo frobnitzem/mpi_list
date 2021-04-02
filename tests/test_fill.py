@@ -1,5 +1,11 @@
+import pytest
+
 import numpy as np
-from mpi_list import fill
+from mpi_list.fill import fill
+
+__author__ = "David M. Rogers"
+__copyright__ = "David M. Rogers"
+__license__ = "MIT"
 
 def check_fill(delta, sends):
     x = delta.copy()

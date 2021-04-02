@@ -1,5 +1,5 @@
-from fill import fill
-from reducer import Reducer, CommReducer
+from .fill import fill
+from .reducer import Reducer, CommReducer
 
 # Distributed Free Monoid = A list of something.
 class DFM:
