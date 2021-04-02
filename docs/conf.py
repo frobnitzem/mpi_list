@@ -36,29 +36,32 @@ try:  # for Sphinx >= 1.7
 except ImportError:
     from sphinx import apidoc
 
-output_dir = os.path.join(__location__, "api")
-module_dir = os.path.join(__location__, "../src/mpi_list")
-try:
-    shutil.rmtree(output_dir)
-except FileNotFoundError:
-    pass
+# This will clobber the api directory and create its own docs.
+# so I don't run it.
+def gen_apidoc():
+    output_dir = os.path.join(__location__, "api")
+    module_dir = os.path.join(__location__, "../src/mpi_list")
+    try:
+        shutil.rmtree(output_dir)
+    except FileNotFoundError:
+        pass
 
-try:
-    import sphinx
+    try:
+        import sphinx
 
-    cmd_line_template = (
-        "sphinx-apidoc --implicit-namespaces -f -o {outputdir} {moduledir}"
-    )
-    cmd_line = cmd_line_template.format(outputdir=output_dir, moduledir=module_dir)
+        cmd_line_template = (
+            "sphinx-apidoc --implicit-namespaces -f -o {outputdir} {moduledir}"
+        )
+        cmd_line = cmd_line_template.format(outputdir=output_dir, moduledir=module_dir)
 
-    args = cmd_line.split(" ")
-    if tuple(sphinx.__version__.split(".")) >= ("1", "7"):
-        # This is a rudimentary parse_version to avoid external dependencies
-        args = args[1:]
+        args = cmd_line.split(" ")
+        if tuple(sphinx.__version__.split(".")) >= ("1", "7"):
+            # This is a rudimentary parse_version to avoid external dependencies
+            args = args[1:]
 
-    apidoc.main(args)
-except Exception as e:
-    print("Running `sphinx-apidoc` failed!\n{}".format(e))
+        apidoc.main(args)
+    except Exception as e:
+        print("Running `sphinx-apidoc` failed!\n{}".format(e))
 
 # -- General configuration ---------------------------------------------------
 
@@ -127,7 +130,7 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", ".venv"]
 
 # If true, the current module name will be prepended to all description
 # unit titles (such as .. function::).
-# add_module_names = True
+add_module_names = False
 
 # If true, sectionauthor and moduleauthor directives will be shown in the
 # output. They are ignored by default.

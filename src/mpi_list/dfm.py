@@ -1,50 +1,108 @@
 from .fill import fill
 from .reducer import Reducer, CommReducer
 
-# Distributed Free Monoid = A list of something.
 class DFM:
-    def __init__(self, ctxt, elems):
-        self.C = ctxt
-        self.E = elems
+    """Distributed Free Monoid = A list of something.
 
-    # Number of elements in DFM
-    # returns the total size to every process
+    All method calls are parallel, and must be called
+    by every rank.
+
+    Attributes:
+        C: Reference to the Context object
+        E: List of local elements.
+
+    """
+    def __init__(self, C, E):
+        self.C = C
+        self.E = E
+
     def len(self):
+        """Number of elements in DFM (returned to all ranks)
+
+        Returns:
+            int : total size
+        """
         return self.C.comm.allreduce(len(self.E))
 
-    # Map over elements.
-    # f : elem -> new elem
     def map(self, f):
+        """Map over elements.
+
+        Args:
+            f: function of type = elem -> new elem
+
+        Returns:
+            new DFM
+
+        """
         return DFM(self.C, [f(e) for e in self.E])
     
-    # Filter, removing some elements.
-    # f : elem -> bool
     def filter(self, f):
+        """Filter, removing some elements.
+
+        Args:
+            f: function of type = elem -> bool
+
+        Returns:
+            new DFM
+
+        """
         return DFM(self.C, [e for e in self.E if f(e)])
 
-    # Map over elements and concatenate all results.
-    # f : elem -> [new elem]
     def flatMap(self, f): # applyM
+        """Map over elements and concatenate all results.
+
+        Args:
+            f: function of type = elem -> [new elem]
+
+        Returns:
+            new DFM
+
+        """
         ans = []
         for e in self.E:
             ans.extend( f(e) )
         return DFM(self.C, ans)
 
-    # Apply an associative, pairwise reduction to the dataset.
-    # The result is sent to all nodes if distribute=True
-    # otherwise, it is present only on the root node.
-    #
-    # Note: x0 must be an object that can be updated in-place
-    # It must be initialized to a value representing
-    # the starting value for a single MPI rank.
-    #
-    # It will contain an undefined value on return of this function,
-    # having to do with the reduction order.
-    #
-    # The function f must operate in-place, storing
-    # its result on the left.
-    # f : *a, a -> ()
     def reduce(self, f, x0, distribute=True):
+        """Reduce the dataset to a value.
+
+        Apply an associative, pairwise reduction to the dataset.
+        The result is sent to all ranks if distribute=True
+        otherwise, it is present only on the root rank (rank 0).
+
+        The function f must operate in-place, storing
+        its result on the left, for example::
+
+            def f(a,b):
+                a[0] = b[0]
+
+        This is indicated in the function's type with *elem.
+
+        Each rank calls `f(x0, e)` on all its elements,
+        then does a fan-in reduction on x0.  You can
+        technically implement a different function for each
+        phase by detecting whether `e` has the type
+        of x0 or the type of an element.
+        In fact, this is the only way to get around the
+        restriction that `type(x0) == type(e)`.
+
+        Note:
+            `x0` must be an object that can be updated in-place.
+            On return, `x0` will contain an undefined value.
+
+            It must be initialized to a value representing
+            the starting value for a single MPI rank.
+
+
+        Args:
+            f: a function modifying its first argument, type = *elem, elem -> ()
+            x0: the "zero" value of the first argument
+            distribute: Distribute the answer from rank 0 to all ranks?
+
+        Returns:
+            elem
+
+        """
         R = Reducer(f, x0)
         for e in self.E:
             R(e)
@@ -53,30 +111,65 @@ class DFM:
             x0 = self.C.comm.bcast(x0)
         return x0
 
-    # Collect all the elements to the root node.
-    # This *should* be the same as reduce(extend, [], distribute=False)
-    def collect(self):
-        lE = self.C.comm.gather(self.E)
-        if self.C.rank != 0:
-            return lE
+    def collect(self, root=0):
+        """Collect all the elements to the root rank.
+
+        This is equivalent to reduce(extend, [], distribute=False),
+        but uses MPI_Gather.
+
+        Note:
+            Even though non-root ranks receive None, they *still*
+            have call this function.
+            Check the dataset size before calling this, since
+            this may cause a memory error.
+
+        Args:
+            root: The rank receiving the collected results.
+
+        Returns:
+            List of elems if rank == root, None otherwise.
+
+        """
+
+        lE = self.C.comm.gather(self.E, root=root)
+        if self.C.rank != root:
+            return None
         ans = []
         for x in lE:
             ans.extend(x)
         return ans
 
-    # map over every rank - f is called
-    # once on every node with arguments
-    #  - rank : int
-    #  - E : list containing all local elements
-    # f must return a list
     def nodeMap(self, f):
+        """map over the MPI ranks.
+
+        The input function, f, is called
+        once on every rank with arguments:
+        * rank : int
+        * E : list containing all local elements
+        
+        Note:
+            f must return a list
+
+        Args:
+            f: function of type = int, elem -> [new elems]
+
+        Returns:
+            DFM
+
+        """
+
         ans = f(self.C.rank, self.E)
         assert isinstance(ans, list), f"nodeMap: f must return a list (got {type(f)})"
         return DFM(self.C, f(self.C.rank, self.E))
 
-    # Distribute the first n elements to all nodes
-    # (useful for interactive debugging)
     def head(self, n=10):
+        """Distribute the first n elements to all ranks
+        (useful for interactive debugging)
+
+        Returns:
+            first n values, [elem]
+        """
+
         # create dfm with length of each rank
         ans = []
         root = 0
@@ -96,19 +189,38 @@ class DFM:
     #    newE = []
     #    return DFM(self.C, newE)
 
-# create a global context
-# The context holds its DFMs
 class Context:
+    """Global context
+    
+    The context is a convenient place to store MPI attributes.
+
+    Attributes:
+        rank:  rank of the current process (0, 1, ..., procs-1)
+        procs: number of MPI ranks
+        comm:  MPI.COMM_WORLD
+        MPI:   mpi4py's MPI module
+
+    """
     def __init__(self):
         from mpi4py import MPI
-        self.rdds = [] # link to all DFMs
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.procs = self.comm.Get_size()
         self.MPI = MPI
 
-    # Create a DFM from a sequence of numbers.
     def iterates(self, n, robin=False):
+        """Create a DFM from a sequence of numbers.
+
+        Args:
+            n:     The number of iterates
+            robin: If True, assignments are done round-robin,
+                   so rank 0 will have 0, procs, 2*procs, ...
+                   rank 1 will have 1, procs+1, 2*procs+1, ...
+
+        Returns:
+            DFM holding numbers 0, 1, ..., n-1
+
+        """
         if robin: # round-robin is simpler, but destroys ordering
             return DFM(self, list(range(self.rank, n, self.procs)))
         blk = n // self.procs
