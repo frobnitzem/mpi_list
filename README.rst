@@ -48,7 +48,7 @@ Quick Start
 Launch your program with `mpirun python my_prog.py`.
 
 If you're using a supercomputer, consider installing
-[spindle](https://computing.llnl.gov/projects/spindle/software)
+`spindle <https://computing.llnl.gov/projects/spindle/software>`_,
 and then use `spindle mpirun python my_prog.py`.
 
 .. _pyscaffold-notes:
