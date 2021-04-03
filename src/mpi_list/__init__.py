@@ -16,3 +16,4 @@ finally:
     del version, PackageNotFoundError
 
 from .dfm import Context, DFM
+from .F import F

@@ -21,25 +21,26 @@ Quick Start
 
     C = Context() # calls MPI_Init via mpi4py
 
+    # After each of the three lines below:
+    #  1. each rank now has 1000//C.procs consecutive numbers
+    #  2. each rank now has a list of strings
+    #  3. only numbers containing a '2' remain
     dfm = C . iterates(1000) \
-      # each rank now has 1000//C.procs consecutive numbers
-      . map(lambda i: f"String {i}") \
-      # each rank now has a list of strings
-      . filter(lambda s: '2' in s)
-      # only numbers containing a '2' remain
+            . map(lambda i: f"String {i}") \
+            . filter(lambda s: '2' in s)
 
-    # Caution! This will deadlock your program:
-    # collective calls must be called by all ranks!
     if C.rank == 0:
+        # Caution! Uncommenting this will deadlock your program.
+        # Collective calls must be called by all ranks!
         #print( dfm . head(10) )
         pass
 
-    ans = dfm.head(10)
     # This is OK, since all ranks now have 'ans'
+    ans = dfm.head(10)
     if C.rank == 0:
         print( ans )
 
-    ans = dfm . filter(lambda s: len(s) <= len("String nn"))
+    ans = dfm . filter(lambda s: len(s) <= len("String nn")) \
               . collect()
     if ans is not None: # only rank 0 gets "collect"
         print( ans )

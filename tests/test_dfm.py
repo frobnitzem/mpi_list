@@ -3,7 +3,7 @@ import pytest
 from mpi_list.dfm import DFM, Context
 
 __author__ = "David M. Rogers"
-__copyright__ = "David M. Rogers"
+__copyright__ = "Oak Ridge National Lab"
 __license__ = "MIT"
 
 def test_dfm(N=97):

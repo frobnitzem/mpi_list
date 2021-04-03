@@ -5,7 +5,7 @@ from mpi_list import Context
 from mpi_list.reducer import Reducer, CommReducer
 
 __author__ = "David M. Rogers"
-__copyright__ = "David M. Rogers"
+__copyright__ = "Oak Ridge National Lab"
 __license__ = "MIT"
 
 
@@ -35,5 +35,5 @@ def test2():
 
 if __name__=="__main__":
     "Allow tests to be run stand-alone using mpirun."
-    test1()
+    test()
     test2()

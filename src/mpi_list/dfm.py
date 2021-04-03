@@ -1,5 +1,6 @@
 from .fill import fill
 from .reducer import Reducer, CommReducer
+from .pscan import psched
 
 class DFM:
     """Distributed Free Monoid = A list of something.
@@ -110,6 +111,76 @@ class DFM:
         if distribute:
             x0 = self.C.comm.bcast(x0)
         return x0
+
+    def scan(self, f):
+        """Perform a parallel prefix-scan on the dataset.
+
+        Args:
+            f: an associative, pairwise function of type = elem, elem -> elem
+
+        Returns:
+            DFM containing [e0, f(e0,e1), f(e0,f(e1,e2)), ...]
+
+        """
+
+        rank = self.C.rank
+        procs = self.C.procs
+
+        # compute local prefix-sum
+        pre = []
+        if len(self.E) > 0:
+            pre = [self.E[0]]
+            for i in range(1, len(self.E)):
+                pre.append(f(pre[i-1], self.E[i]))
+
+        if procs == 1:
+            return DFM(self.C, pre)
+
+        last = []
+        if len(pre) > 0:
+            last = [ pre[-1] ]
+
+        # send last val. to rank+1 nbr
+        if rank % 2 == 0: # even ranks send first
+            if rank != procs-1:
+                self.C.comm.send(last, dest=rank+1, tag=10)
+            if rank == 0:
+                recv = []
+            else:
+                recv = self.C.comm.recv(source=rank-1, tag=11)
+        else: # odd ranks recv first
+            recv = self.C.comm.recv(source=rank-1, tag=10)
+            if rank != procs-1:
+                self.C.comm.send(last, dest=rank+1, tag=11)
+        last = recv
+
+        # ranks 1, ..., procs-1 participate in prefix scan
+        if rank > 0:
+            vrank = rank-1 # virtual rank numbering
+            sch = psched(procs-1)
+            for i,sl in enumerate(sch):
+                off = sl.step//2
+                # sending rank?
+                if vrank >= sl.start \
+                       and vrank < sl.stop \
+                       and (vrank - sl.start)%sl.step == 0:
+                    self.C.comm.send(last, dest=rank+off, tag=i)
+                # receiving rank?
+                elif vrank >= sl.start+off \
+                       and (vrank - sl.start-off)%sl.step == 0:
+                    u = self.C.comm.recv(source=rank-off, tag=i)
+                    if len(last) == 0:
+                        last = u
+                    elif len(u) != 0:
+                        last = [ f(u[0], last[0]) ]
+                    # else u == [] and last remains unchanged
+
+        # distribute incoming prefix scan (if non-empty)
+        if len(last) > 0:
+            for i in range(len(pre)):
+                pre[i] = f(last[0], pre[i])
+
+        return DFM(self.C, pre)
 
     def collect(self, root=0):
         """Collect all the elements to the root rank.

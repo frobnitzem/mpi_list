@@ -4,7 +4,7 @@ import numpy as np
 from mpi_list.fill import fill
 
 __author__ = "David M. Rogers"
-__copyright__ = "David M. Rogers"
+__copyright__ = "Oak Ridge National Lab"
 __license__ = "MIT"
 
 def check_fill(delta, sends):
