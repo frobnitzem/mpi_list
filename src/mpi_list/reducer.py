@@ -1,5 +1,9 @@
 from math import log
-import numpy as np
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 # fn should operate by modifying its first argument
 # at the end of the reduction, `data` will hold the answer.
@@ -42,7 +46,7 @@ class CommReducer:
             step *= 2
 
     def recv(self, j, lev):
-        if isinstance(self.R.data, np.ndarray):
+        if np is not None and isinstance(self.R.data, np.ndarray):
             return self.fast_recv(j, lev)
         self.R( self.comm.recv(source=j, tag=lev) )
 
@@ -59,7 +63,7 @@ class CommReducer:
         self.R( np.frombuffer(dst, dtype=self.R.data.dtype) )
 
     def send(self, i, lev):
-        if isinstance(self.R.data, np.ndarray):
+        if np is not None and isinstance(self.R.data, np.ndarray):
             return self.fast_send(i, lev)
         self.comm.send(self.R.data, dest=i, tag=lev)
 
