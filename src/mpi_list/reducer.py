@@ -5,15 +5,16 @@ try:
 except ImportError:
     np = None
 
-# fn should operate by modifying its first argument
-# at the end of the reduction, `data` will hold the answer.
+# fn may modify and return its first argument
+# this means the `zero` input may be modified!
+# At the end of the reduction, `data` will hold the answer.
 class Reducer:
     def __init__(self, fn, zero):
-        self.fn = fn      #  *a,a -> ()
+        self.fn = fn      #  *a,a -> a
         self.data = zero  #  a
 
     def __call__(self, data2):
-        self.fn(self.data, data2)
+        self.data = self.fn(self.data, data2)
 
 class CommReducer:
     def __init__(self, C, R):
@@ -44,6 +45,8 @@ class CommReducer:
             #for i in range(0, self.procs, 2*step):
             #    self.join2(i, i+step)
             step *= 2
+
+        return self.R.data
 
     def recv(self, j, lev):
         if np is not None and isinstance(self.R.data, np.ndarray):

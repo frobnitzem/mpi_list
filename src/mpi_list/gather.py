@@ -16,14 +16,18 @@ def gather_partitions(C, dP, N):
         N: Number of output elements
 
     Returns:
-        [e'] belonging to current rank [ len <= seq1-seq0 ]
+        result = [[e'] with a given sequence number]
+        limited to sequence numbers belonging to current rank.
+        The sequence numbers of each sub-list
+        are sorted ascending, but not provided.
+        Note: len(result) <= seq1 - seq0
     """
     sets = [[] for i in range(C.procs)] # output sets going to each rank
     bs = (N+C.procs-1) // C.procs # max blk sz
     bs0 = N//C.procs
     for seq, p in dP.items():
         j = seq // bs # lower bound on j
-        while seq > (j+1)*bs0 + min(N % C.procs, j+1):
+        while seq >= (j+1)*bs0 + min(N % C.procs, j+1):
             j += 1
         sets[j].append( (seq,p) )
 
@@ -39,12 +43,32 @@ def gather_partitions(C, dP, N):
     ans = []
     for r in out:
         for sp in r:
-            ans.extend(sp)
+            ans.append(sp)
     # ans is now a list of (i,p) belonging to this rank
     # need to sort it
-    perm = [(s[0],i) for i,s in enumerate(s)]
+    if len(ans) == 0:
+        return []
+
+    perm = [(s[0],i) for i,s in enumerate(ans)]
     perm.sort()
-    return [ ans[i][1] for j,i in perm ]
+
+    # gather together all elements with the same idx (s[0] above)
+    # into grps, a list of lists -- one per cval
+    grps = []
+    cval = None # current output idx
+    clist = []  # elems at idx
+    for key, i in perm:
+        if cval is None:
+            cval = key
+        elif key != cval:
+            grps.append(clist)
+            clist = []
+            cval = key
+        clist.extend(ans[i][1]) # all elements of key from a rank
+    if cval is not None:
+        grps.append(clist)
+
+    return grps
 
 def send_chunks(comm, lst, dst, tag, max_elems=100000):
     for i,n in enumerate(range(0, len(lst), max_elems)):
@@ -62,28 +86,40 @@ def send_items(C, items, sched):
     Args:
         C: Context
         items: local items to send
-        sched: list of (src,dst) pairs for all sends involving this rank
+        sched: list of (tag,src,dst) pairs for all sends involving this rank
 
     Returns:
-        list of items received
+        [ [items received with idx] over all idx-s ]
     """
     i = 0
     sends = []
-    recvs = []
-    for k,src,dst in enumerate(sched):
+    recvs = [] # nested list of recv-s, grouped by idx
+    dgrp = [] # group of recv-s to the same idx
+    cidx = None
+    for tag,src,dst,idx in sched:
         if src == C.rank:
             assert i < len(items), "Too many sends requested."
-            req = C.comm.isend(items[i], dest=dst, tag=k)
+            req = C.comm.isend(items[i], dest=dst, tag=tag)
             sends.append(req)
             i += 1
         elif dst == C.rank:
-            req = C.comm.irecv(source=src, tag=k)
-            recvs.append(req)
+            if cidx != idx:
+                if len(dgrp) > 0:
+                    recvs.append(dgrp)
+                dgrp = []
+                cidx = idx
+            req = C.comm.irecv(source=src, tag=tag)
+            dgrp.append(req)
+    if len(dgrp) > 0:
+        recvs.append(dgrp)
     assert i == len(items), "Some items were not sent!"
 
     ans = []
-    for r in recvs:
-        ans.append( r.wait() )
+    for dgrp in recvs:
+        v = []
+        for r in dgrp:
+            v.append( r.wait() )
+        ans.append(v)
     for s in sends:
         s.wait()
     return ans

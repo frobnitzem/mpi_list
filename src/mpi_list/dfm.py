@@ -1,5 +1,5 @@
 # schedule regrouping
-from .segment import even_spread, segments
+from .segment import even_spread, cumsum, segments
 # gather / repartition sends
 from .gather import gather_partitions, send_items
 # reduce
@@ -76,15 +76,16 @@ class DFM:
         The result is sent to all ranks if distribute=True
         otherwise, it is present only on the root rank (rank 0).
 
-        The function f must operate in-place, storing
-        its result on the left, for example::
+        Yhe function f `may` operate in-place,
+        storing its result on the left, for example::
 
             def f(a,b):
                 a[0] = b[0]
+                return a
 
         This is indicated in the function's type with `*elem`.
 
-        Each rank calls `f(x0, e)` on all its elements,
+        Each rank calls `x0 = f(x0, e)` on all its elements,
         then does a fan-in reduction on x0.  You can
         technically implement a different function for each
         phase by detecting whether `e` has the type
@@ -93,14 +94,16 @@ class DFM:
         restriction that `type(x0) == type(e)`.
 
         Note:
-            `x0` must be an object that can be updated in-place.
-            On return, `x0` will contain an undefined value.
+            `x0` may be updated in-place. Even if you do this,
+            `x0` will contain an undefined value on return.
 
-            It must be initialized to a value representing
+            x0 must be initialized to a value representing
             the starting value for a single MPI rank.
 
         Args:
-            f: a function modifying its first argument, type = *elem, elem -> ()
+            f: a function of type = *elem, elem -> *elem
+               It is permissable to modify the left argument in-place
+               and return it.
             x0: the "zero" value of the first argument
             distribute: Distribute the answer from rank 0 to all ranks?
 
@@ -111,7 +114,7 @@ class DFM:
         R = Reducer(f, x0)
         for e in self.E:
             R(e)
-        CommReducer(self.C,R)()
+        x0 = CommReducer(self.C,R)()
         if distribute:
             x0 = self.C.comm.bcast(x0)
         return x0
@@ -263,32 +266,126 @@ class DFM:
         return ans
 
     def repartition(self, llen, split, concat, N):
+        """Repartition into N "equally distributed" items.
+
+        Each element, `e`, is assumed to represent a collection
+        of llen(e) items.  The function `split` should split
+        `e` up into blocks spanning the specified index ranges.
+
+        Repartition will then communicate these blocks
+        as needed so that each output partition has a list of
+        its component blocks.
+
+        The function ``concat`` will do the final join
+        of all blocks composing each output element.
+
+        Args:
+            llen: function of type = e -> int
+                  returning the internal length of each element
+            split: function of type = elem, [(i0,i1)] -> [e']
+                   creating intermediate blocks to communicate
+            concat: function of type = [e'] -> new elem
+                   building the final output elements
+
+        Returns:
+            DFM of new elems
+
+        """
         # cumulative sum of all lengths
-        plen = self.map(llen)
-        plen = plen.reduce(lambda a,b: a+b).E
-        olen = self.C.comm.allgather( plen )
-        orank = [0]
-        csum  = [0] # global index starts for elements on ea. rank
-        for i,o in enumerate(olen):
-            orank.extend( [i]*len(o) )
-            csum.extend( o )
-        orank[-1] = self.C.procs
+        plen = self.map(llen).scan(lambda a,b: a+b).E
+        print(plen)
+        # gather this directly, since the segments tell us the ranks
+        # owning each slice of segments
+        slen = self.C.comm.allgather( plen )
+        srank = [0] # src rank for each segment
+        ssum  = [0] # global index starts for elements on ea. rank
+        start_local = None # offset of self.E in global elem list
+        for i,o in enumerate(slen): # loop over ranks
+            if i == self.C.rank and start_local is None:
+                start_local = len(ssum)
+            srank.extend( [i]*len(o) )
+            ssum.extend( o )
 
-        to_send = []
-        dst = []
-        to_recv = []
-        src = []
-        for i,e in enumerate(self.E):
-            idx, segs = intervals(plen[i], plen[i+1], out)
+        # target elem-lens on return
+        tgt = list(reversed(even_spread(ssum[-1], N)))
+        # rank of output elems
+        orank = []
+        for i,n in enumerate(even_spread(N,self.C.procs)):
+            orank.extend( [i]*n )
 
-            todo.extend(split(e, segs))
-            dst.extend(idx)
+        seg = segments(ssum, cumsum(tgt))
 
-        # target sizes for ea. element
-        tgt = even_spread(lE[-1], N)
+        local = []
+        sched = []
+        cur = None # use these to accumulate indices
+        loc = []   # to split current src elem, `cur`
+        for i,s in enumerate(seg):
+            ri = srank[s.src]
+            ro = orank[s.dst]
+            if ri == self.C.rank:
+                if cur is None:
+                    cur = s.src
+                elif cur != s.src:
+                    v = split(self.E[cur-start_local], loc)
+                    assert isinstance(v, list), "Error: invalid split return value"
+                    assert len(v) == len(loc), "Error: invalid split return value"
+                    local.extend(v)
+                    loc = []
+                    cur = s.src
+                loc.append( (s.s0,s.s1) )
 
-        newE = []
-        return DFM(self.C, newE)
+                sched.append((i, ri, ro, s.dst))
+            elif ro == self.C.rank:
+                sched.append((i, ri, ro, s.dst))
+        if len(loc) > 0:
+            local.extend(split(self.E[cur-start_local], loc))
+
+        newE = send_items(self.C, local, sched)
+        return DFM(self.C, [concat(e) for e in newE])
+
+    def group(self, f, concat, N):
+        """Group elements into `N` partitions.
+
+        Each element, `e`, is assumed to represent a collection
+        of things.  The function, `f`, returns a dictionary
+        mapping the new element number to an intermediate collection, `e'`.
+
+        For example, if `e` is a list of names, the function
+        def f(e, out):
+           for name in e:
+              i = ord(name[0].upper())-ord('A')
+              if i not in out:
+                  out[i] = []
+              out[i].append(name)
+
+        would break it up into groups by first-letter.
+
+        Group will then communicate these new values
+        as needed so that each output element has a list of
+        its component blocks.
+
+        The function ``concat`` will do the final join
+        of all blocks composing each output element.
+
+        Args:
+            f: function of type = e, *{i: [e']} -> ()
+               modifying the dictionary to append all
+               elements belonging to each key
+               Note: this requires 0 <= i < N
+            concat: function of type = [e'] -> new elem
+                   building the final output elements
+            N: the number of output elements
+
+        Returns:
+            DFM of new elems
+
+        """
+        dP = {}
+        for e in self.E:
+            f(e, dP)
+        ans = gather_partitions(self.C, dP, N)
+        del dP
+        return DFM(self.C, [concat(a) for a in ans])
 
 class Context:
     """Global context

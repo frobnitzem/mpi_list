@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import pytest
 
 from mpi_list.dfm import DFM, Context
@@ -50,6 +52,7 @@ def test_reduce(N=101):
     s = [0]
     def add(a,b):
         a[0] += b[0]
+        return a
 
     ans = dfm.reduce(add, s)
     assert ans[0] == N*(N-1) // 2
@@ -57,6 +60,7 @@ def test_reduce(N=101):
     s = []
     def append(a,b):
         a.extend(b)
+        return a
 
     ans = dfm.reduce(append, s)
     assert len(ans) == N
