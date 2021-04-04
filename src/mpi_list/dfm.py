@@ -1,5 +1,10 @@
-from .fill import fill
+# schedule regrouping
+from .segment import even_spread, segments
+# gather / repartition sends
+from .gather import gather_partitions, send_items
+# reduce
 from .reducer import Reducer, CommReducer
+# prefix scan
 from .pscan import psched
 
 class DFM:
@@ -77,7 +82,7 @@ class DFM:
             def f(a,b):
                 a[0] = b[0]
 
-        This is indicated in the function's type with *elem.
+        This is indicated in the function's type with `*elem`.
 
         Each rank calls `f(x0, e)` on all its elements,
         then does a fan-in reduction on x0.  You can
@@ -93,7 +98,6 @@ class DFM:
 
             It must be initialized to a value representing
             the starting value for a single MPI rank.
-
 
         Args:
             f: a function modifying its first argument, type = *elem, elem -> ()
@@ -196,13 +200,17 @@ class DFM:
 
         Args:
             root: The rank receiving the collected results.
+                  if root is None, then all ranks receive the result.
 
         Returns:
             List of elems if rank == root, None otherwise.
 
         """
 
-        lE = self.C.comm.gather(self.E, root=root)
+        if root is None:
+            lE = self.C.comm.allgather(self.E)
+        else:
+            lE = self.C.comm.gather(self.E, root=root)
         if self.C.rank != root:
             return None
         ans = []
@@ -254,11 +262,33 @@ class DFM:
             root += 1
         return ans
 
-    ## re-group elements locally
-    #def gather(self, concat, tgt, sz=len):
-    #    #
-    #    newE = []
-    #    return DFM(self.C, newE)
+    def repartition(self, llen, split, concat, N):
+        # cumulative sum of all lengths
+        plen = self.map(llen)
+        plen = plen.reduce(lambda a,b: a+b).E
+        olen = self.C.comm.allgather( plen )
+        orank = [0]
+        csum  = [0] # global index starts for elements on ea. rank
+        for i,o in enumerate(olen):
+            orank.extend( [i]*len(o) )
+            csum.extend( o )
+        orank[-1] = self.C.procs
+
+        to_send = []
+        dst = []
+        to_recv = []
+        src = []
+        for i,e in enumerate(self.E):
+            idx, segs = intervals(plen[i], plen[i+1], out)
+
+            todo.extend(split(e, segs))
+            dst.extend(idx)
+
+        # target sizes for ea. element
+        tgt = even_spread(lE[-1], N)
+
+        newE = []
+        return DFM(self.C, newE)
 
 class Context:
     """Global context
