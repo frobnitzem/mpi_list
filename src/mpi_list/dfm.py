@@ -291,24 +291,31 @@ class DFM:
             DFM of new elems
 
         """
+        def run_split(e, idx):
+            v = split(e, idx)
+            assert isinstance(v, list), "Error: invalid split return value"
+            assert len(v) == len(idx), "Error: invalid split return value"
+            return v
+
         # cumulative sum of all lengths
         plen = self.map(llen).scan(lambda a,b: a+b).E
-        print(plen)
+
         # gather this directly, since the segments tell us the ranks
         # owning each slice of segments
         slen = self.C.comm.allgather( plen )
-        srank = [0] # src rank for each segment
+        srank = [] # src rank for each segment
         ssum  = [0] # global index starts for elements on ea. rank
-        start_local = None # offset of self.E in global elem list
+        start_local = 0
         for i,o in enumerate(slen): # loop over ranks
-            if i == self.C.rank and start_local is None:
-                start_local = len(ssum)
+            if i < self.C.rank:
+                start_local += len(o)
             srank.extend( [i]*len(o) )
             ssum.extend( o )
+        #print(f"local for {self.C.rank} = {start_local}")
 
-        # target elem-lens on return
+        # target elem-lens on return (heavy elems at end)
         tgt = list(reversed(even_spread(ssum[-1], N)))
-        # rank of output elems
+        # rank of output elems (extra elems at start)
         orank = []
         for i,n in enumerate(even_spread(N,self.C.procs)):
             orank.extend( [i]*n )
@@ -326,10 +333,7 @@ class DFM:
                 if cur is None:
                     cur = s.src
                 elif cur != s.src:
-                    v = split(self.E[cur-start_local], loc)
-                    assert isinstance(v, list), "Error: invalid split return value"
-                    assert len(v) == len(loc), "Error: invalid split return value"
-                    local.extend(v)
+                    local.extend(run_split(self.E[cur-start_local], loc))
                     loc = []
                     cur = s.src
                 loc.append( (s.s0,s.s1) )
@@ -338,7 +342,7 @@ class DFM:
             elif ro == self.C.rank:
                 sched.append((i, ri, ro, s.dst))
         if len(loc) > 0:
-            local.extend(split(self.E[cur-start_local], loc))
+            local.extend(run_split(self.E[cur-start_local], loc))
 
         newE = send_items(self.C, local, sched)
         return DFM(self.C, [concat(e) for e in newE])

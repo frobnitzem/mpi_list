@@ -94,22 +94,32 @@ def send_items(C, items, sched):
     i = 0
     sends = []
     recvs = [] # nested list of recv-s, grouped by idx
-    dgrp = [] # group of recv-s to the same idx
+    dgrp = [] # group of (bool,recv)-s to the same idx
     cidx = None
+    # accumulate a recv operation into dgrp ~> recvs
+    def accum_recv(req, cidx, idx, dgrp, recvs):
+        if cidx != idx:
+            if len(dgrp) > 0:
+                recvs.append(dgrp)
+            dgrp = []
+            cidx = idx
+        dgrp.append(req)
+
+        return cidx, dgrp
+
     for tag,src,dst,idx in sched:
         if src == C.rank:
             assert i < len(items), "Too many sends requested."
-            req = C.comm.isend(items[i], dest=dst, tag=tag)
-            sends.append(req)
+            if dst == C.rank: # direct move (put the item here, don't send)
+                req = (False, items[i])
+                cidx, dgrp = accum_recv(req, cidx, idx, dgrp, recvs)
+            else:
+                req = C.comm.isend(items[i], dest=dst, tag=tag)
+                sends.append(req)
             i += 1
         elif dst == C.rank:
-            if cidx != idx:
-                if len(dgrp) > 0:
-                    recvs.append(dgrp)
-                dgrp = []
-                cidx = idx
-            req = C.comm.irecv(source=src, tag=tag)
-            dgrp.append(req)
+            req = (True, C.comm.irecv(source=src, tag=tag))
+            cidx, dgrp = accum_recv(req, cidx, idx, dgrp, recvs)
     if len(dgrp) > 0:
         recvs.append(dgrp)
     assert i == len(items), "Some items were not sent!"
@@ -117,8 +127,11 @@ def send_items(C, items, sched):
     ans = []
     for dgrp in recvs:
         v = []
-        for r in dgrp:
-            v.append( r.wait() )
+        for net, r in dgrp:
+            if net:
+                v.append( r.wait() )
+            else:
+                v.append( r )
         ans.append(v)
     for s in sends:
         s.wait()
