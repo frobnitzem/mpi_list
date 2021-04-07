@@ -233,7 +233,7 @@ class DFM:
             f must return a list
 
         Args:
-            f: function of type = int, elem -> [new elems]
+            f: function of type = int, [elem] -> [new elems]
 
         Returns:
             DFM
@@ -242,7 +242,7 @@ class DFM:
 
         ans = f(self.C.rank, self.E)
         assert isinstance(ans, list), f"nodeMap: f must return a list (got {type(f)})"
-        return DFM(self.C, f(self.C.rank, self.E))
+        return DFM(self.C, ans)
 
     def head(self, n=10):
         """Distribute the first n elements to all ranks
