@@ -2,6 +2,12 @@
 Changelog
 =========
 
+Version 0.3
+===========
+
+- Added DFM.group and DFM.repartition
+- Fixed docs for nodeMap
+
 Version 0.2
 ===========
 

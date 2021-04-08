@@ -15,6 +15,7 @@ def test():
     x0 = np.zeros(10)
     def add(x,y):
         x += y
+        return x
     R = Reducer(add, x0)
     R(np.ones(10))
     CommReducer(C,R)()
@@ -27,6 +28,7 @@ def test2():
     x0 = [0]
     def add(x,y):
         x[0] += y[0]
+        return x
     R = Reducer(add, x0)
     R([10])
     CommReducer(C,R)()
