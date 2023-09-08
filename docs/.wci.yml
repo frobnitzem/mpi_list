@@ -1,0 +1,24 @@
+---
+# Metadata parsed by the workflow community initiative, https://workflows.community/systems
+# Registered at https://github.com/workflowscommunity/workflowscommunity.github.io/blob/main/_data/workflow_systems.yml
+name: MPI-list
+
+headline: A package for working with lists distributed over MPI.
+
+description: |
+  Map-reduce, sort, filter, scan, and repartition for lists distributed over a set of MPI ranks.
+
+language: Python3
+
+documentation:
+  general: https://mpi-list.readthedocs.io/en/latest/
+  installation: https://pypi.org/project/mpi-list/
+  tutorial: https://github.com/frobnitzem/mpi_list/tree/master#readme
+
+execution_environment:
+  interfaces:
+    - pypi
+  resource_managers:
+    - MPI
+  transfer_protocols:
+    - MPI
